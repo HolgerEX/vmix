@@ -1,6 +1,8 @@
 # ANYMIX 21
+Notes to self:
+in vm101-inout: why is LT1228 used when only first amplifier in use? -> cheaper
 
-![Product Photo](./images/anymix21-promo.png)
+
 
 Multichannel modular analog PAL video mixer based on the SYNKIE project
 
@@ -28,3 +30,5 @@ Still under construction, the first 6 channels have passed their endurance test 
 - [https://www.synkie.net](https://www.synkie.net)
 - [Videos on Vimeo](https://vimeo.com/showcase/8252873)
 - [Synkie on Github](https://github.com/mirdej/synkie)
+
+![Product Photo](./images/anymix21-promo.png)
