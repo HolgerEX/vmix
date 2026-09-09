@@ -2,890 +2,829 @@
 
 ## 1. Architecture Objective
 
-The mixer shall use a modular, extensible architecture separating:
+The mixer shall use a modular architecture separating:
 
 1. **Input/channel processing**
-2. **Internal video distribution/routing**
+2. **Internal video bus routing**
 3. **Output/mixing**
 4. **Global digital control**
 
-The architecture shall support `n` independent input channels, an extensible internal video bus, and `j` independent output/mixer modules.
+The channel module has exactly **one internal video output**.
 
-The preferred architecture is:
+Routing from channels onto the internal video bus is performed by a centralized MUX/routing stage. The channel PCB contains **no routing MUX**.
 
-    INPUT CHANNELS
-         │
-         ▼
-    Channel Processing
-         │
-         ▼
-    Channel MUX
-         │
-         ▼
-    INTERNAL VIDEO BUS
-         │
-         ▼
-    Output / Mixer Modules
-         │
-         ▼
-    Physical Outputs
+The resulting architecture is:
 
-A separate master module controls the digital routing/control plane.
+```
+INPUT CHANNELS
+     │
+     ▼
+Channel Processing
+     │
+     ▼
+Single Channel Output
+     │
+     ▼
+INTERNAL BUS MUX / ROUTER
+     │
+     ▼
+INTERNAL VIDEO BUS
+     │
+     ▼
+Output / Mixer Modules
+     │
+     ▼
+Physical Outputs
+```
+
+A separate master module controls the digital routing and configuration.
 
 ---
 
 # 2. Top-Level Architecture
 
-    ┌─────────────────────────────────────────────────────────────┐
-    │                         CHANNEL MODULES                      │
-    │                                                             │
-    │  CH1 ──► processing ──► MUX ──┐                             │
-    │  CH2 ──► processing ──► MUX ──┤                             │
-    │  CH3 ──► processing ──► MUX ──┤                             │
-    │  ...                          │                             │
-    │  CHn ──► processing ──► MUX ──┘                             │
-    └───────────────────────────────┬─────────────────────────────┘
-                                    │
-                                    ▼
-    ┌─────────────────────────────────────────────────────────────┐
-    │                    INTERNAL VIDEO BUS                       │
-    │                                                             │
-    │  BUS 0   BUS 1   ...   BUS m-1                              │
-    │                                                             │
-    │  BUS m   BUS m+1 ...   BUS 2m-1                             │
-    │                                                             │
-    │  ...                                                        │
-    │                                                             │
-    │  BUS (k-1)m ...              BUS km-1                        │
-    │                                                             │
-    │              k × m total lanes                              │
-    └───────────────────────────────┬─────────────────────────────┘
-                                    │
-                 ┌──────────────────┼──────────────────┐
-                 ▼                  ▼                  ▼
-          ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-          │ MIX/OUTPUT  │   │ MIX/OUTPUT  │   │ MIX/OUTPUT  │
-          │ MODULE 1    │   │ MODULE 2    │   │ MODULE j    │
-          │             │   │             │   │             │
-          │ full matrix │   │ full matrix │   │ full matrix │
-          │ mixer       │   │ mixer       │   │ mixer       │
-          └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
-                 │                 │                 │
-                OUT1              OUT2              OUTj
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       CHANNEL MODULES                        │
+│                                                             │
+│  CH1 ──► processing ───────────────┐                        │
+│  CH2 ──► processing ───────────────┤                        │
+│  CH3 ──► processing ───────────────┤                        │
+│  ...                               │                        │
+│  CHn ──► processing ───────────────┘                        │
+│                                                             │
+│  Each channel has ONE internal video output                 │
+└───────────────────────────────┬─────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 INTERNAL BUS MUX / ROUTER                   │
+│                                                             │
+│  CH1 ──► MUX ──► BUS                                         │
+│  CH2 ──► MUX ──► BUS                                         │
+│  CH3 ──► MUX ──► BUS                                         │
+│  ...                                                        │
+│  CHn ──► MUX ──► BUS                                         │
+│                                                             │
+│  Routing is centralized at the bus level.                   │
+└───────────────────────────────┬─────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    INTERNAL VIDEO BUS                        │
+│                                                             │
+│  BUS 0   BUS 1   ...   BUS m-1                              │
+│                                                             │
+│  BUS m   BUS m+1 ...   BUS 2m-1                             │
+│                                                             │
+│  ...                                                        │
+│                                                             │
+│  k × m total lanes                                           │
+└───────────────────────────────┬─────────────────────────────┘
+                                │
+             ┌──────────────────┼──────────────────┐
+             ▼                  ▼                  ▼
+      ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+      │ MIX/OUTPUT  │   │ MIX/OUTPUT  │   │ MIX/OUTPUT  │
+      │ MODULE 1    │   │ MODULE 2    │   │ MODULE j    │
+      │             │   │             │   │             │
+      │ full matrix │   │ full matrix │   │ full matrix │
+      │ mixer       │   │ mixer       │   │ mixer       │
+      └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
+             │                 │                 │
+            OUT1              OUT2              OUTj
 
 
-    ┌─────────────────────────────────────────────────────────────┐
-    │                       MASTER MODULE                          │
-    │                                                             │
-    │  configuration / routing / gain control / synchronization   │
-    │                                                             │
-    │  Controls channel MUXes and output mixer modules            │
-    └─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                       MASTER MODULE                          │
+│                                                             │
+│  configuration / routing / gain control / synchronization   │
+│                                                             │
+│  Controls bus MUXes and output mixer modules                │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-# 3. Channel Architecture
+# 3. Channel Module Architecture
 
 Each physical input channel is an independent module.
 
-Preferred channel signal path:
+The channel PCB has exactly **one internal video output**.
 
-    INPUT
-      │
-      ▼
-    Input protection / termination
-      │
-      ▼
-    Input buffer
-      │
-      ▼
-    Level / gain conditioning
-      │
-      ▼
-    Channel MUX
-      │
-      ▼
-    Internal video bus
+Preferred signal path:
 
-The channel module should not contain the output mixer.
+```
+INPUT
+  │
+  ▼
+Input protection / termination
+  │
+  ▼
+Input buffer
+  │
+  ▼
+Level / gain conditioning
+  │
+  ▼
+SINGLE INTERNAL OUTPUT
+  │
+  ▼
+Internal bus MUX
+```
 
-This keeps the channel PCB simple and makes the channel reusable regardless of the eventual number of outputs.
+The channel module does **not** perform routing.
 
-## Preferred choice
+There is:
 
-**One channel PCB per physical input channel.**
+* no channel MUX
+* no channel crosspoint
+* no channel mixing
+* no output selection
 
-The channel PCB should contain:
-
-- input termination
-- input protection
-- video buffer
-- required level conditioning
-- MUX/routing stage
-- local control interface
-- internal-bus output driver
-
-The channel PCB should expose its selected signal onto the internal video bus.
-
----
-
-# 4. Channel MUX
-
-The MUX is primarily a **bus assignment mechanism**, not the output mixer.
-
-Its purpose is:
-
-    Channel signal
-         │
-         ▼
-       MUX
-      / | \
-     /  |  \
-   BUS BUS BUS ...
-
-A channel can therefore select which internal bus lane carries its signal.
-
-## Preferred topology
-
-Use an analog video MUX/crosspoint device where practical.
-
-The MUX should be:
-
-- wideband beyond the 20 MHz system target
-- low distortion
-- low crosstalk
-- low insertion loss
-- suitable for composite/PAL video levels
-- digitally controllable
-- capable of high-impedance/off-state isolation
-
-The digital control should come from the master module.
-
-## Important architectural rule
-
-The channel MUX does **not** perform arbitrary mixing.
-
-It assigns a channel to an internal bus lane.
-
-This makes the channel routing problem separate from the output mixing problem.
-
----
-
-# 5. Internal Video Bus
-
-The internal video bus is the central distribution fabric.
-
-The bus shall consist of:
-
-    k × m lanes
-
-where:
-
-- `m` = base bus width
-- `k` = number of bus groups/expansions
-- `k × m` = total number of internal video lanes
-
-The base bus width shall preferably be:
-
-    m = 2 or 4
-
-The architecture shall permit additional groups of `m` lanes to be added.
-
-Example:
-
-    k = 1, m = 4
-
-    BUS0
-    BUS1
-    BUS2
-    BUS3
-
-Expansion:
-
-    k = 2, m = 4
-
-    BUS0
-    BUS1
-    BUS2
-    BUS3
-
-    BUS4
-    BUS5
-    BUS6
-    BUS7
-
-Further expansion:
-
-    k = 3, m = 4
-
-    BUS0 ... BUS11
-
----
-
-# 6. Bus Width Recommendation
-
-The preferred base configuration is:
-
-    m = 4
-
-A four-lane bus is preferable to a two-lane bus for the initial prototype because it provides useful routing flexibility without making the backplane excessively large.
-
-The architecture shall nevertheless remain compatible with:
-
-    m = 2
-
-where a smaller implementation is desired.
+The channel module's sole responsibility is to turn its physical input into a clean, standardized internal video signal.
 
 ## Preferred choice
 
-**4 lanes per bus group.**
+**One PCB per physical input channel with one standardized internal video output.**
 
-The PCB/backplane should be designed so that additional four-lane groups can be added without redesigning the channel module.
-
----
-
-# 7. Bus Scaling
-
-The internal bus should scale independently of the physical channel count.
-
-The basic scaling model is:
-
-    Total bus lanes = k × m
-
-For example:
-
-    4 channels:
-        k = 1
-        m = 4
-        → 4 internal lanes
-
-    8 channels:
-        k = 2
-        m = 4
-        → 8 internal lanes
-
-    12 channels:
-        k = 3
-        m = 4
-        → 12 internal lanes
-
-    16 channels:
-        k = 4
-        m = 4
-        → 16 internal lanes
-
-This provides a natural modular scaling mechanism.
+This provides a very simple and reusable channel design.
 
 ---
 
-# 8. Preferred Bus Capacity
+# 4. Channel Output Standard
 
-Ideally:
+All channel modules should expose the same internal electrical interface.
 
-    Number of internal video lanes ≥ number of input channels
+The channel output should provide:
 
-Therefore, the preferred fully populated configuration is:
+* standardized signal level
+* standardized impedance
+* defined DC operating point
+* adequate bandwidth
+* low distortion
+* predictable source impedance
 
-    k × m ≥ n
-
-where:
-
-- `n` = number of input channels
-- `m` = base bus width
-- `k` = number of bus groups
-
-For the first prototype:
-
-    n = 4
-    m = 4
-    k = 1
-
-therefore:
-
-    4 input channels
-    4 internal video lanes
-
-This gives a **1:1 channel-to-bus capacity**.
-
-That is the preferred starting point.
-
----
-
-# 9. Why Bus Capacity Should Match Channel Count
-
-If:
-
-    bus lanes = channel count
-
-then every channel can have a unique internal destination.
-
-For `n` channels:
-
-    CH1 → BUS1
-    CH2 → BUS2
-    CH3 → BUS3
-    ...
-    CHn → BUSn
-
-This allows the output mixer to perform the complete routing/mixing operation.
-
-It also avoids a fundamental bottleneck where several channels must share one internal bus before the output mixer.
-
-The internal bus therefore acts as a **lossless routing pool**, while the output modules perform the actual mixing.
-
----
-
-# 10. Channel MUX Routing Model
-
-The channel MUX should preferably be able to select:
-
-    one internal bus lane
-
-for the channel's signal.
-
-For example:
-
-    CH1 → BUS3
-    CH2 → BUS1
-    CH3 → BUS4
-    CH4 → BUS2
-
-The master module stores and controls these assignments.
-
-The MUX therefore establishes the internal signal topology.
-
-The output mixer then operates on the available bus signals.
-
----
-
-# 11. Output / Mixer Module
-
-Each output/mixer module is independent.
-
-A module consumes the internal video bus and produces one or more physical outputs according to its design.
-
-For a single-output mixer:
-
-    BUS0 ──► gain ──┐
-    BUS1 ──► gain ──┤
-    BUS2 ──► gain ──┼──► SUM ──► output driver ──► OUT
-    BUS3 ──► gain ──┘
-
-For a four-lane bus:
-
-    OUT = G0·BUS0
-        + G1·BUS1
-        + G2·BUS2
-        + G3·BUS3
-
-Each contribution has an independently controllable gain.
-
----
-
-# 12. Full Matrix Mixing
-
-The output stage shall support **full matrix mixing**.
-
-For `B = k × m` internal bus lanes and `j` output modules:
-
-    OUT1 = G11·BUS1 + G12·BUS2 + ... + G1B·BUSB
-
-    OUT2 = G21·BUS1 + G22·BUS2 + ... + G2B·BUSB
-
-    ...
-
-    OUTj = Gj1·BUS1 + Gj2·BUS2 + ... + Gjb·BUSB
-
-The complete gain matrix is therefore:
-
-                     Internal Bus
-                  B1    B2    B3   ...   BB
-               ┌────────────────────────────
-    OUT1       │ G11  G12   G13  ...  G1B
-    OUT2       │ G21  G22   G23  ...  G2B
-    OUT3       │ G31  G32   G33  ...  G3B
-    ...        │ ...
-    OUTj       │ Gj1  Gj2   Gj3  ...  GjB
-               └────────────────────────────
-
-Every output shall be able to receive every internal bus lane.
-
-This is the definition of the full matrix mixer.
-
----
-
-# 13. Output Gain Cell
-
-The preferred output architecture is:
-
-    BUS
-      │
-      ▼
-    Variable gain element
-      │
-      ▼
-    Summing node
-      │
-      ▼
-    Output buffer/driver
-
-The gain element simultaneously provides:
-
-- routing enable
-- contribution level
-- mixing coefficient
-
-Therefore a separate MUX at every matrix intersection is not necessarily required.
+The channel output then connects to the centralized internal-bus routing stage.
 
 Conceptually:
 
-    Gij = 0
-        → bus not contributing
+```
+CH1 ─────────┐
+CH2 ─────────┤
+CH3 ─────────┼──► INTERNAL BUS MUX
+CH4 ─────────┤
+...          │
+CHn ─────────┘
+```
 
-    Gij = nominal
-        → unity contribution
-
-    0 < Gij < nominal
-        → attenuated contribution
-
-This is preferred over:
-
-    crosspoint → separate VGA → mixer
-
-if the selected VCA/VGA can provide sufficient OFF attenuation and signal isolation.
-
-This reduces component count and PCB complexity.
+This makes the channel module independent from the number of internal bus lanes.
 
 ---
 
-# 14. Preferred Matrix Implementation
+# 5. Internal Bus MUX / Router
 
-### Preferred
+The routing MUX is located centrally between the channel modules and the internal video bus.
 
-    INTERNAL BUS
-         │
-         ├──► VCA ──┐
-         ├──► VCA ──┤
-         ├──► VCA ──┤
-         └──► VCA ──┘
-                    │
-                    ▼
-                  SUM
-                    │
-                    ▼
-                 OUTPUT
+Its purpose is:
 
-Each output module contains one gain cell per internal bus lane.
+```
+CHANNEL OUTPUT
+      │
+      ▼
+  BUS MUX
+      │
+      ▼
+INTERNAL BUS LANE
+```
+
+For `n` channels and `B` internal bus lanes, the routing stage maps channel outputs onto the available bus lanes.
+
+The conceptual routing matrix is:
+
+```
+             BUS
+          B1 B2 B3 ... BB
+       ┌───────────────────
+CH1    │  x  x  x  ...  x
+CH2    │  x  x  x  ...  x
+CH3    │  x  x  x  ...  x
+...    │
+CHn    │  x  x  x  ...  x
+       └───────────────────
+```
+
+The exact implementation does not necessarily need a full crosspoint.
+
+The preferred initial implementation is a **MUX per internal bus lane**:
+
+```
+BUS1 = MUX(CH1 ... CHn)
+BUS2 = MUX(CH1 ... CHn)
+BUS3 = MUX(CH1 ... CHn)
+...
+BUSB = MUX(CH1 ... CHn)
+```
+
+This allows every bus lane to independently select a channel.
+
+---
+
+# 6. Bus MUX Architecture
+
+For `B` internal lanes:
+
+```
+CH1 ─┬────────► MUX1 ──► BUS1
+CH2 ─┤
+CH3 ─┤
+...  ┤
+CHn ─┘
+
+CH1 ─┬────────► MUX2 ──► BUS2
+CH2 ─┤
+...  ┤
+CHn ─┘
+
+...
+
+CH1 ─┬────────► MUXB ──► BUSB
+CH2 ─┤
+...  ┤
+CHn ─┘
+```
+
+This creates `B` independently selectable bus lanes.
+
+Each bus lane can select one channel.
+
+---
+
+# 7. Bus Routing Capability
+
+The bus routing stage therefore supports:
+
+```
+CH1 → BUS1
+CH2 → BUS2
+CH3 → BUS3
+CH4 → BUS4
+```
+
+but can also create:
+
+```
+CH1 → BUS1
+CH1 → BUS2
+CH1 → BUS3
+CH1 → BUS4
+```
+
+or:
+
+```
+CH1 → BUS1
+CH2 → BUS1
+CH3 → BUS1
+CH4 → BUS1
+```
+
+depending on the MUX configuration.
+
+This is an important distinction.
+
+A channel still has only one physical output, but **that output may be selected by multiple bus MUXes**.
+
+Therefore the architecture permits fan-out at the routing stage without adding a MUX to each channel.
+
+---
+
+# 8. Internal Video Bus
+
+The internal video bus is the central distribution fabric.
+
+The bus consists of:
+
+```
+k × m lanes
+```
+
+where:
+
+* `m` = base bus width
+* `k` = number of bus groups
+* `B = k × m` = total number of internal video lanes
+
+The preferred base configuration is:
+
+```
+m = 4
+```
+
+The architecture shall permit additional groups of four lanes to be added.
+
+Example:
+
+```
+k = 1
+m = 4
+
+BUS0
+BUS1
+BUS2
+BUS3
+```
+
+Expansion:
+
+```
+k = 2
+m = 4
+
+BUS0 ... BUS7
+```
+
+Further expansion:
+
+```
+k = 3
+m = 4
+
+BUS0 ... BUS11
+```
+
+---
+
+# 9. Bus Width Recommendation
+
+The preferred base bus width is:
+
+```
+m = 4
+```
+
+Four lanes provide useful routing flexibility while keeping the first implementation compact.
+
+Two-lane variants may be supported where a smaller design is required:
+
+```
+m = 2
+```
+
+However, the standard expansion unit should preferably remain four lanes.
+
+## Preferred choice
+
+**4 internal video lanes per expansion group.**
+
+---
+
+# 10. Bus Capacity
+
+The preferred relationship is:
+
+```
+B ≥ n
+```
+
+where:
+
+* `B` = total internal video lanes
+* `n` = number of physical input channels
+
+This means the internal bus has at least one lane per input channel.
+
+For the initial prototype:
+
+```
+n = 4
+m = 4
+k = 1
+```
+
+therefore:
+
+```
+B = 4
+```
+
+This gives:
+
+```
+4 channel outputs
+    ↓
+4 independent bus lanes
+```
+
+and allows a complete one-to-one channel assignment.
+
+---
+
+# 11. Why Match Bus Capacity to Channel Count
+
+With four channels and four bus lanes:
+
+```
+CH1 → BUS0
+CH2 → BUS1
+CH3 → BUS2
+CH4 → BUS3
+```
+
+all four source signals can simultaneously exist on independent internal lanes.
+
+The output matrix can then independently combine them.
+
+This avoids losing routing information before the mixer.
+
+For a general system:
+
+```
+n channels
+B ≥ n buses
+```
+
+provides sufficient capacity to expose every input independently to the output matrix.
+
+This is the preferred architecture for maximum flexibility.
+
+---
+
+# 12. Output / Mixer Module
+
+Each output/mixer module is independent.
+
+A single-output mixer consumes all internal bus lanes:
+
+```
+BUS0 ──► gain ──┐
+BUS1 ──► gain ──┤
+BUS2 ──► gain ──┼──► SUM ──► output driver ──► OUT
+BUS3 ──► gain ──┘
+```
 
 For `B` bus lanes:
 
-    B gain cells / output
+```
+OUTj = Σ(Gji × BUSi)
+```
 
-For `j` output modules:
-
-    j × B gain cells
-
-This gives a predictable scaling relationship.
+Each bus contribution has an independently controlled gain.
 
 ---
 
-# 15. Alternative Matrix Implementation
+# 13. Full Matrix Mixing
 
-If the chosen VCA cannot provide sufficient OFF isolation, use:
+The output stage shall support full matrix mixing.
 
-    INTERNAL BUS
-         │
-         ▼
-    Analog crosspoint
-         │
-         ▼
-    VGA/VCA
-         │
-         ▼
-       SUM
+For `B` internal bus lanes and `j` output modules:
 
-This provides explicit routing isolation but increases:
+```
+OUT1 = G11·BUS1 + G12·BUS2 + ... + G1B·BUSB
 
-- component count
-- PCB area
-- control complexity
-- signal-path loading
-- potential insertion loss
+OUT2 = G21·BUS1 + G22·BUS2 + ... + G2B·BUSB
 
-Therefore it is the **secondary choice**, not the preferred architecture.
+...
 
----
+OUTj = Gj1·BUS1 + Gj2·BUS2 + ... + GjB·BUSB
+```
 
-# 16. Output Module Scaling
+Every output can receive every internal bus lane.
 
-Output modules shall be independent.
+The resulting matrix is:
 
-For example:
+```
+                 INTERNAL BUS
+              B1    B2    B3   ...   BB
+           ┌────────────────────────────
+OUT1       │ G11  G12   G13  ...  G1B
+OUT2       │ G21  G22   G23  ...  G2B
+OUT3       │ G31  G32   G33  ...  G3B
+...        │ ...
+OUTj       │ Gj1  Gj2   Gj3  ...  GjB
+           └────────────────────────────
+```
 
-    4 internal buses
-    1 output module
-
-gives:
-
-    4 → 1 mixer
-
-With two output modules:
-
-    4 → 1
-    4 → 1
-
-giving:
-
-    4 → 2 full matrix
-
-With four output modules:
-
-    4 → 4 full matrix
-
-Each output is independently controllable.
-
-The number of output modules therefore does not need to equal the number of input channels.
+This is the full output mixing matrix.
 
 ---
 
-# 17. Example: 4 × 4 Prototype
+# 14. Preferred Output Matrix Implementation
 
-The recommended first prototype is:
+The preferred architecture is:
 
-    n = 4 input channels
-    m = 4 lanes/group
-    k = 1 bus group
-    B = 4 total bus lanes
-    j = 4 output modules
+```
+INTERNAL BUS
+     │
+     ├──► VCA / variable gain ──┐
+     ├──► VCA / variable gain ──┤
+     ├──► VCA / variable gain ──┤
+     └──► VCA / variable gain ──┤
+                                ▼
+                               SUM
+                                │
+                                ▼
+                          OUTPUT BUFFER
+                                │
+                                ▼
+                              OUT
+```
 
-Architecture:
+There is one gain cell for each:
 
-    CH1 ──► MUX ──┐
-    CH2 ──► MUX ──┤
-    CH3 ──► MUX ──┼──► BUS0..BUS3
-    CH4 ──► MUX ──┘
-                       │
-             ┌─────────┼─────────┐
-             ▼         ▼         ▼
-           OUT1      OUT2      OUT3 ... OUT4
-             │         │         │
-          4:1 SUM    4:1 SUM   4:1 SUM
-             │         │         │
-            OUT1      OUT2      OUT3      OUT4
+```
+bus lane × output
+```
 
-Each output has four independently controlled gain paths.
+Therefore:
 
----
+```
+Number of gain cells = B × j
+```
 
-# 18. Example Routing
+For the 4 × 4 prototype:
 
-Suppose:
+```
+4 bus lanes × 4 outputs
+= 16 gain cells
+```
 
-    CH1 → BUS0
-    CH2 → BUS1
-    CH3 → BUS2
-    CH4 → BUS3
-
-Then:
-
-    OUT1 = 1.0·BUS0 + 0.5·BUS1 + 0·BUS2 + 0·BUS3
-
-    OUT2 = 0·BUS0 + 1.0·BUS1 + 1.0·BUS2 + 0·BUS3
-
-    OUT3 = 0.5·BUS0 + 0·BUS1 + 0.5·BUS2 + 1.0·BUS3
-
-    OUT4 = 1.0·BUS0 + 1.0·BUS1 + 1.0·BUS2 + 1.0·BUS3
-
-This demonstrates why a bus width equal to the channel count is desirable.
-
-Every physical input can remain independently available to every output.
+This provides the complete output matrix.
 
 ---
 
-# 19. Pan / Balance
+# 15. Why Routing and Mixing Are Separated
 
-Stereo operation can be implemented in the output matrix.
+The architecture deliberately separates two functions.
 
-For example, two output modules:
+## Routing
 
-    OUT_L
-    OUT_R
+```
+Channel → Internal Bus
+```
 
-A channel can be assigned to a bus lane and then mixed into both outputs with different coefficients.
+controlled by the centralized MUX stage.
 
-For channel `CH1`:
+## Mixing
 
-    BUS0 = CH1
+```
+Internal Bus → Output
+```
 
-Then:
+controlled by the output matrix.
 
-    OUT_L = 0.707 × BUS0
-    OUT_R = 0.707 × BUS0
+Therefore:
 
-for a center-panned signal.
+```
+CHANNEL
+   │
+   ▼
+MUX / ROUTING
+   │
+   ▼
+BUS
+   │
+   ▼
+MATRIX GAIN
+   │
+   ▼
+SUM
+   │
+   ▼
+OUTPUT
+```
 
-Moving the pan changes the two matrix coefficients.
-
-This avoids requiring dedicated analog pan circuitry on every input channel.
-
-Pan is therefore preferably implemented as a **matrix gain relationship**.
+This separation keeps each subsystem simple and makes the overall system scalable.
 
 ---
 
-# 20. Master Module
+# 16. Pan / Balance
 
-The master module is responsible for the digital control plane.
+Pan and balance are naturally implemented in the output matrix.
+
+For a stereo output pair:
+
+```
+BUS0 ──► G_L ──► OUT_L
+    └──► G_R ──► OUT_R
+```
+
+The pan control changes:
+
+```
+G_L
+G_R
+```
+
+For a centered signal:
+
+```
+G_L ≈ G_R
+```
+
+For a left-panned signal:
+
+```
+G_L → maximum
+G_R → minimum
+```
+
+For a right-panned signal:
+
+```
+G_L → minimum
+G_R → maximum
+```
+
+No dedicated pan circuitry is required on the channel module.
+
+---
+
+# 17. Output Module Scaling
+
+The number of output modules is independent of the number of input channels.
+
+Let:
+
+```
+n = input channels
+B = internal bus lanes
+j = output modules
+```
+
+Then the system provides:
+
+```
+n → B → j
+```
+
+with:
+
+```
+B ≥ n
+```
+
+preferred.
+
+Examples:
+
+```
+4 channels → 4 buses → 2 outputs
+
+4 channels → 4 buses → 4 outputs
+
+8 channels → 8 buses → 4 outputs
+
+8 channels → 8 buses → 8 outputs
+```
+
+The output matrix scales with:
+
+```
+B × j
+```
+
+rather than directly with:
+
+```
+n × j
+```
+
+because the bus isolates the channel layer from the output layer.
+
+---
+
+# 18. Master Module
+
+The master module owns the digital control plane.
 
 It shall control:
 
-- channel MUX selection
-- output mixer gain
-- matrix configuration
-- output enable/mute
-- global configuration
-- module identification
-- optional presets/scenes
-- synchronization of configuration changes
+* channel-to-bus MUX selection
+* output matrix gain
+* output mute/enable
+* module configuration
+* module addressing
+* presets/scenes
+* optional synchronization
+* user interface
 
-The master module should not carry the main analog video path.
+The master module should not carry the main analog video signal.
 
-Preferred architecture:
+Conceptually:
 
-    MASTER
-      │
-      ├──── digital control ────► CHANNEL MODULES
-      │
-      ├──── digital control ────► MIXER MODULES
-      │
-      └──── configuration / UI
-
-This keeps the high-speed analog video path physically separate from the digital control system.
-
----
-
-# 21. Digital Control Architecture
-
-The internal digital control bus should be designed as a modular control network.
-
-Preferred characteristics:
-
-- addressable modules
-- deterministic configuration
-- low pin count
-- easy PCB expansion
-- hot-plugging not required
-- simple firmware implementation
-- local decoding on each module
-
-A serial control bus is preferred over dedicating individual MCU GPIO lines to every analog switch.
-
-Possible implementations include:
-
-- SPI with local chip-select/address decoding
-- I²C where device speed/latency is adequate
-- dedicated serial control bus
-- shift-register architecture for simple static controls
-
-### Preferred initial choice
-
-**SPI-style local control with module addressing/selection.**
-
-The final choice should be made after the selected MUX/VCA ICs are known.
+```
+MASTER
+  │
+  ├── digital control ──► BUS MUX
+  │
+  ├── digital control ──► MIXER MODULES
+  │
+  └── user interface / configuration
+```
 
 ---
 
-# 22. Physical Bus Architecture
+# 19. Digital Control
 
-The internal video bus should preferably be implemented as a controlled backplane.
+The digital control architecture should be modular and addressable.
 
-Recommended topology:
+Preferred initial implementation:
 
-    Channel PCBs
-        │
-        │
-        ▼
-    ┌──────────────────────────┐
-    │       VIDEO BACKPLANE     │
-    │                           │
-    │ BUS0 BUS1 BUS2 BUS3 ...   │
-    └──────────────────────────┘
-        │       │       │
-        ▼       ▼       ▼
-     MIX 1    MIX 2    MIX j
+**SPI-style serial control with local module selection/addressing.**
 
-The backplane should be treated as a real high-frequency analog transmission structure.
+The control bus should allow:
 
-At the 20 MHz system target, PCB layout remains important because PAL composite video contains significantly higher-frequency components than the nominal 20 MHz fundamental bandwidth target might suggest.
+* adding channel modules
+* adding bus MUX modules
+* adding output modules
+* configuring modules independently
+
+without requiring a dedicated control line for every analog device.
+
+The exact interface shall be finalized after selecting the MUX and VCA components.
 
 ---
 
-# 23. Bus Electrical Requirements
-
-Each internal video lane should have:
-
-- controlled source impedance
-- defined termination strategy
-- low capacitive loading
-- adequate drive capability
-- controlled trace geometry
-- short stubs
-- predictable loading
-
-The bus should preferably be designed around a single defined video impedance, normally:
-
-    75 Ω
-
-if the internal signal remains conventional composite video.
-
-The exact topology must be validated experimentally because a multi-drop 75 Ω analog bus can become heavily loaded.
-
-The preferred implementation may therefore use:
-
-    Channel driver
-        │
-        ▼
-    buffered bus
-        │
-        ├──► Mixer 1
-        ├──► Mixer 2
-        └──► Mixer j
-
-rather than directly connecting multiple high-capacitance MUX inputs to the same passive node.
-
----
-
-# 24. Bus Driver
-
-Each channel should preferably have a dedicated bus driver.
-
-This isolates:
-
-    channel circuitry
-
-from:
-
-    backplane loading
-
-and provides predictable drive characteristics.
-
-Preferred:
-
-    Channel signal
-         │
-         ▼
-    MUX
-         │
-         ▼
-    Video buffer / line driver
-         │
-         ▼
-    Internal bus
-
-The buffer should be selected for:
-
-- ≥20 MHz useful video bandwidth
-- adequate slew rate
-- low distortion
-- low noise
-- appropriate output drive
-- 75 Ω video operation
-- stable operation with expected capacitive loading
-
----
-
-# 25. Component Selection Philosophy
-
-Component selection should follow this order:
-
-### 1. Signal integrity
-
-The device must comfortably support the intended video bandwidth.
-
-### 2. Video performance
-
-Evaluate:
-
-- differential gain
-- differential phase
-- crosstalk
-- insertion loss
-- return loss
-- group delay
-- settling/glitch behavior
-
-### 3. Component count
-
-Prefer devices combining multiple required functions.
-
-### 4. Control simplicity
-
-Prefer devices with straightforward digital configuration.
-
-### 5. Availability
-
-Prefer current-production components with multiple-source or stable supply availability where practical.
-
-### 6. Cost
-
-Cost optimization comes after achieving a robust signal path.
-
----
-
-# 26. Recommended Functional Partition
+# 20. Physical Partition
 
 ## Channel PCB
 
 Contains:
 
-    Input
-      ↓
-    Protection / termination
-      ↓
-    Input buffer
-      ↓
-    Level conditioning
-      ↓
-    MUX
-      ↓
-    Bus driver
-      ↓
-    Internal bus
+```
+INPUT
+  ↓
+Protection / termination
+  ↓
+Input buffer
+  ↓
+Level conditioning
+  ↓
+SINGLE INTERNAL OUTPUT
+```
 
-One PCB represents one independent input channel.
+No MUX.
 
----
+No matrix circuitry.
 
-## Backplane
-
-Contains:
-
-- internal video bus lanes
-- digital control bus
-- power distribution
-- module connectors
-
-The backplane should contain as little active analog circuitry as possible.
+No mixing.
 
 ---
 
-## Mixer / Output PCB
+## Bus / Routing PCB
 
 Contains:
 
-    BUS lanes
-       │
-       ├──► VCA/gain cell ─┐
-       ├──► VCA/gain cell ─┤
-       ├──► VCA/gain cell ─┤
-       └──► VCA/gain cell ─┤
-                           ▼
-                         SUM
-                           │
-                       output buffer
-                           │
-                         OUTPUT
+```
+Channel inputs
+     │
+     ▼
+MUX bank
+     │
+     ▼
+Internal video bus
+```
 
-One output module corresponds to one independently controlled matrix output.
+The MUX bank provides the channel-to-bus routing.
+
+This module may be implemented as part of the backplane or as a dedicated routing PCB.
+
+---
+
+## Internal Video Backplane
+
+Contains:
+
+* internal video bus lanes
+* digital control bus
+* power distribution
+* module connectors
+
+The backplane should contain as little active analog circuitry as practical.
+
+---
+
+## Output / Mixer PCB
+
+Contains:
+
+```
+BUS lanes
+   │
+   ├──► VCA ──┐
+   ├──► VCA ──┤
+   ├──► VCA ──┤
+   └──► VCA ──┤
+              ▼
+             SUM
+              │
+         output driver
+              │
+            OUT
+```
+
+One output module represents one independent matrix output.
 
 ---
 
@@ -893,236 +832,414 @@ One output module corresponds to one independently controlled matrix output.
 
 Contains:
 
-- MCU
-- user interface
-- digital control
-- configuration storage
-- module addressing
-- optional communication interface
+* MCU
+* user interface
+* digital control
+* configuration storage
+* module addressing
+* optional communications
 
-No primary analog video processing should be performed here.
-
----
-
-# 27. Design Rules
-
-The architecture shall follow these rules:
-
-### Rule 1 — Channels are independent
-
-Adding a channel should not require redesigning existing channel PCBs.
-
-### Rule 2 — Channels do not directly mix
-
-All mixing occurs in output/mixer modules.
-
-### Rule 3 — Internal bus is a routing resource
-
-The bus carries independently selected channel signals.
-
-### Rule 4 — Output modules perform matrix mixing
-
-Every output can access every internal bus lane.
-
-### Rule 5 — Bus capacity should scale with channel count
-
-Prefer:
-
-    B ≥ n
-
-for a fully flexible configuration.
-
-### Rule 6 — Base expansion unit is fixed
-
-Use:
-
-    m = 4
-
-as the preferred physical expansion unit.
-
-### Rule 7 — Output count is independent
-
-`j` may be smaller or larger than `n`.
-
-### Rule 8 — Digital control is centralized
-
-The master module owns the configuration.
-
-### Rule 9 — Analog and digital domains remain separated
-
-The digital control system should not unnecessarily enter the high-speed analog signal path.
+No primary video signal path.
 
 ---
 
-# 28. Final Mathematical Model
+# 21. Bus Electrical Architecture
+
+If the internal signal remains conventional PAL/composite video, the internal bus should be designed around the appropriate video impedance, normally:
+
+```
+75 Ω
+```
+
+The bus architecture must account for:
+
+* source impedance
+* termination
+* capacitive loading
+* trace impedance
+* reflections
+* connector loading
+* crosstalk
+* signal attenuation
+
+A passive multi-drop bus should not be assumed to behave correctly simply because its nominal frequency is only 20 MHz.
+
+The preferred architecture is therefore:
+
+```
+Channel
+   │
+   ▼
+Channel buffer
+   │
+   ▼
+Bus MUX
+   │
+   ▼
+Bus driver / isolation
+   │
+   ▼
+Internal bus
+```
+
+where required.
+
+---
+
+# 22. Bus MUX Loading
+
+Because every channel output may feed multiple MUX inputs, the channel output must be capable of driving the aggregate load.
+
+The channel output stage should therefore be designed with the bus MUX bank in mind.
+
+Preferred:
+
+```
+Channel
+   │
+   ▼
+Wideband video buffer
+   │
+   ▼
+Multiple MUX inputs
+```
+
+The buffer should provide adequate:
+
+* output drive
+* bandwidth
+* stability
+* isolation
+* video linearity
+
+The exact requirement depends on the selected MUX topology.
+
+---
+
+# 23. Component Selection Priorities
+
+Component selection should follow:
+
+1. Signal integrity
+2. Video performance
+3. Bandwidth
+4. Low crosstalk
+5. Low distortion
+6. Low component count
+7. Simple digital control
+8. Availability
+9. Cost
+
+For the 20 MHz system target, candidate analog switches, buffers, VGAs/VCAs and summing amplifiers should be evaluated against the actual PAL signal requirements rather than bandwidth alone.
+
+Important parameters include:
+
+* bandwidth
+* insertion loss
+* crosstalk
+* differential gain
+* differential phase
+* settling time
+* glitch behavior
+* output drive
+* noise
+* distortion
+
+---
+
+# 24. First Prototype
+
+The preferred first prototype is:
+
+```
+n = 4 input channels
+m = 4 bus lanes
+k = 1 bus group
+B = 4 internal video lanes
+j = 4 output modules
+```
+
+Signal architecture:
+
+```
+CH1 ──► channel ──┐
+CH2 ──► channel ──┤
+CH3 ──► channel ──┼──► 4-channel MUX bank
+CH4 ──► channel ──┘
+                       │
+                       ▼
+                   BUS0..BUS3
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+       MIX OUT1     MIX OUT2     MIX OUT3
+          │            │            │
+          └────────────┼────────────┘
+                       ▼
+                    MIX OUT4
+```
+
+Each output module receives all four internal bus lanes.
+
+Each output module has four independently controlled gain paths.
+
+Total matrix gain cells:
+
+```
+4 buses × 4 outputs = 16
+```
+
+---
+
+# 25. Example Routing
+
+The bus MUX can establish:
+
+```
+BUS0 = CH1
+BUS1 = CH2
+BUS2 = CH3
+BUS3 = CH4
+```
+
+The output matrix can then create:
+
+```
+OUT1 = 1.0·BUS0 + 0.5·BUS1
+
+OUT2 = 1.0·BUS1 + 1.0·BUS2
+
+OUT3 = 0.5·BUS0 + 0.5·BUS2 + 1.0·BUS3
+
+OUT4 = 1.0·BUS0 + 1.0·BUS1
+     + 1.0·BUS2 + 1.0·BUS3
+```
+
+Thus every output can independently mix every available channel.
+
+---
+
+# 26. Scaling Example
+
+For eight channels:
+
+```
+CH1 ──┐
+CH2 ──┤
+...   ├──► 8-channel routing
+CH8 ──┘
+          │
+          ▼
+      BUS0..BUS7
+          │
+    ┌─────┼─────┐
+    ▼     ▼     ▼
+   OUT1  OUT2  ... OUTj
+```
+
+Using four-lane expansion groups:
+
+```
+m = 4
+k = 2
+```
+
+therefore:
+
+```
+B = 4 × 2
+  = 8 lanes
+```
+
+The channel PCB remains unchanged.
+
+Only the bus/routing capacity and required mixer matrix size increase.
+
+---
+
+# 27. Final Mathematical Model
 
 Let:
 
-    X = vector of physical input channels
+```
+X = [X1, X2, ..., Xn]
+```
 
-    X = [X1, X2, ..., Xn]
+be the physical channel signals.
 
-Let:
+The centralized bus MUX generates:
 
-    B = vector of internal video bus lanes
-
-    B = [B1, B2, ..., BB]
-
-The channel routing stage generates:
-
-    B = R X
-
-where `R` represents the channel-to-bus assignment.
-
-The output matrix then generates:
-
-    Y = G B
+```
+B = R X
+```
 
 where:
 
-- `G` is the output mixing matrix
-- `Y` is the vector of physical outputs
+```
+R = channel-to-bus routing matrix
+```
+
+Each bus lane selects a channel.
+
+The output matrix generates:
+
+```
+Y = G B
+```
+
+where:
+
+```
+G = output mixing matrix
+```
 
 Therefore:
 
-    Y = G R X
+```
+Y = G R X
+```
 
-This separation is intentional.
+This gives a clean separation:
 
-`R` controls **routing**.
+```
+R → routing
+G → mixing
+```
 
-`G` controls **mixing**.
+The architecture can therefore scale independently in all three dimensions:
 
-The architecture can therefore be extended without changing the fundamental signal model.
+```
+n = number of input channels
+B = number of internal bus lanes
+j = number of output modules
+```
+
+with the preferred constraint:
+
+```
+B ≥ n
+```
 
 ---
 
-# 29. Final Recommended Architecture
+# 28. Final Architecture
 
-The preferred final architecture is:
+The final preferred architecture is:
 
-    n INPUT CHANNELS
-            │
-            ▼
-    ┌──────────────────┐
-    │ Channel processing│
-    │ + MUX             │
-    │ + bus driver      │
-    └────────┬─────────┘
-             │
-             ▼
-    ┌────────────────────────────────┐
-    │        INTERNAL VIDEO BUS       │
-    │                                │
-    │       k × m lanes              │
-    │                                │
-    │       m = 4 preferred          │
-    │       k scalable               │
-    │                                │
-    │       B = k × m ≥ n preferred  │
-    └───────────────┬────────────────┘
-                    │
-          ┌─────────┼─────────┐
-          ▼         ▼         ▼
-       MIX/OUT   MIX/OUT    MIX/OUT
-       MODULE 1  MODULE 2   MODULE j
-          │         │         │
-          ▼         ▼         ▼
-        OUT 1     OUT 2     OUT j
-
-                   ▲
+```
+┌──────────────────────────────────────┐
+│           INPUT CHANNELS             │
+│                                      │
+│ CH1 ──► processing ──► single OUT    │
+│ CH2 ──► processing ──► single OUT    │
+│ CH3 ──► processing ──► single OUT    │
+│ ...                                  │
+│ CHn ──► processing ──► single OUT    │
+└──────────────────┬───────────────────┘
                    │
-             MASTER MODULE
-          digital control plane
+                   ▼
+┌──────────────────────────────────────┐
+│         CENTRAL BUS MUX BANK         │
+│                                      │
+│ MUX1 ──► BUS0                        │
+│ MUX2 ──► BUS1                        │
+│ MUX3 ──► BUS2                        │
+│ ...                                  │
+│ MUXB ──► BUSB                        │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│         INTERNAL VIDEO BUS           │
+│                                      │
+│       B = k × m lanes                │
+│       m = 4 preferred                │
+│       B ≥ n preferred                │
+└──────────────────┬───────────────────┘
+                   │
+      ┌────────────┼────────────┐
+      ▼            ▼            ▼
+   OUTPUT 1     OUTPUT 2      OUTPUT j
+      │            │            │
+   full          full         full
+   matrix        matrix       matrix
+      │            │            │
+      ▼            ▼            ▼
+    OUT1         OUT2         OUTj
 
 
-## First Prototype
-
-    n = 4 channels
-    m = 4 lanes
-    k = 1 bus group
-    B = 4 internal lanes
-    j = 4 output modules
-
-    4 channels
-       ↓
-    4 channel MUXes
-       ↓
-    4-lane internal video bus
-       ↓
-    4 independent full-matrix mixer outputs
-
-
-## Preferred implementation choices
-
-| Section | Preferred choice |
-|---|---|
-| Input module | One PCB per input channel |
-| Input buffer | Wideband video buffer |
-| Channel routing | Analog video MUX |
-| Channel → bus | Dedicated bus driver |
-| Base bus width | **4 lanes** |
-| Bus expansion | Additional 4-lane groups |
-| Bus capacity | **Prefer ≥ input channel count** |
-| Backplane | Controlled-impedance analog video bus |
-| Output routing | Full matrix |
-| Matrix gain | **VCA/gain cell per bus → output** |
-| Separate output MUX | Avoid if VCA provides sufficient OFF isolation |
-| Mixer | Analog summing amplifier |
-| Output driver | Dedicated video output buffer |
-| Output modules | Independent, scalable |
-| Control | Central master module |
-| Digital bus | SPI-style modular control initially |
-| Pan/balance | Matrix coefficients |
-| First prototype | **4 × 4 full matrix** |
+                ▲
+                │
+         MASTER MODULE
+         digital control
+```
 
 ---
 
-# 30. Architectural Summary
+# 29. Preferred Choices Summary
 
-The fundamental design decision is:
+| Section             | Preferred choice                                   |
+| ------------------- | -------------------------------------------------- |
+| Input module        | One PCB per physical input                         |
+| Channel output      | **Exactly one standardized internal output**       |
+| Channel routing     | **No MUX on channel PCB**                          |
+| Routing location    | **Centralized bus MUX bank**                       |
+| Bus MUX topology    | One independently controlled MUX per bus lane      |
+| Base bus width      | **4 lanes**                                        |
+| Expansion unit      | 4 additional lanes                                 |
+| Total bus width     | `B = k × 4`                                        |
+| Bus capacity        | **Prefer `B ≥ n`**                                 |
+| Internal bus        | Wideband video backplane                           |
+| Output architecture | Independent mixer/output modules                   |
+| Output mixing       | **Full matrix**                                    |
+| Output gain         | VCA/variable-gain cell per bus/output intersection |
+| Gain cells          | `B × j`                                            |
+| Pan/balance         | Matrix gain coefficients                           |
+| Master              | Central digital controller                         |
+| Digital control     | SPI-style modular control initially                |
+| First prototype     | **4 channels / 4 buses / 4 outputs**               |
+| First matrix        | **4 × 4 full output matrix**                       |
 
-**Do not build a conventional channel mixer where each channel feeds a fixed number of mix buses.**
+---
 
-Instead, build:
+# 30. Core Design Principle
 
-    CHANNEL
-       ↓
-    MUX
-       ↓
-    INTERNAL VIDEO BUS
-       ↓
-    FULL OUTPUT MATRIX
-       ↓
-    OUTPUTS
+The system shall be treated as three independent signal layers:
 
-The internal bus provides a scalable pool of independent video signals.
+```
+CHANNEL LAYER
 
-The output modules provide the actual mixing.
+n independent sources
+      │
+      ▼
 
-For maximum flexibility:
+ROUTING LAYER
 
-    internal bus lanes ≥ input channels
+n sources → B internal buses
+      │
+      ▼
 
-and the preferred physical expansion unit is:
+MIXING LAYER
 
-    4 video lanes.
+B internal buses → j independent outputs
+```
 
-The first prototype therefore becomes a clean:
+The channel module therefore remains deliberately simple:
 
-    4 INPUT
-       ×
-    4 INTERNAL BUS
-       ×
-    4 OUTPUT
+```
+INPUT → PROCESSING → SINGLE OUTPUT
+```
 
-matrix system.
+The centralized bus MUX performs source assignment:
 
-The architecture can subsequently scale to:
+```
+CHANNEL OUTPUTS → INTERNAL BUS
+```
 
-    8 × 8
-    12 × 12
-    16 × 16
-    ...
+The output modules perform arbitrary mixing:
 
-without fundamentally changing the channel, bus, or output-module concepts.
+```
+INTERNAL BUS → FULL MATRIX → OUTPUTS
+```
+
+This separation is the fundamental architecture of the new mixer design.
